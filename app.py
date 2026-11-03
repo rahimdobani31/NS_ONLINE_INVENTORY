@@ -30,7 +30,7 @@ HTML_TEMPLATE = """
     <div class="container">
         <h2>📦 Products Inventory</h2>
         <form method="GET" action="/">
-            <input type="text" name="q" class="search-box" placeholder="🔍 Search by Item Code or Description..." value="{{ query }}" oninput="this.form.submit()">
+            <input type="text" name="q" class="search-box" placeholder="🔍 Search by Item Code or Description..." value="{{ query }}">
         </form>
         <div class="count">Showing <strong>{{ total_showing }}</strong> of <strong>{{ total_all }}</strong> items</div>
         <table>
@@ -64,7 +64,7 @@ HTML_TEMPLATE = """
 </html>
 """
 
-@app.route("/")
+@app.route("/", methods=["GET"])
 def index():
     query = request.args.get("q", "").strip()
     try:
