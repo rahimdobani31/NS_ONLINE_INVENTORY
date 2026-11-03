@@ -1,63 +1,95 @@
-import streamlit as st
+from flask import Flask, render_template_string, request
 import pandas as pd
 
-# ---------------------------------------------------------
-# CONFIGURATION
-# ---------------------------------------------------------
-SHEET_ID = "1YYsTX_pXMlBSv4JeWUQHBHX78iSeaKGyf91nzlBLX1A"
-TAB_NAME = "products"  # Directly targets your products sheet tab
+app = Flask(__name__)
 
-# Public CSV URL for Google Sheets
+SHEET_ID = "1YYsTX_pXMlBSv4JeWUQHBHX78iSeaKGyf91nzlBLX1A"
+TAB_NAME = "products"
 CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={TAB_NAME}"
 
-# Page Configuration
-st.set_page_config(page_title="Product Inventory Search", page_icon="📦", layout="wide")
-st.title("📦 Products Inventory")
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Products Inventory</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin: 30px; background-color: #f8f9fa; color: #333; }
+        .container { max-width: 1100px; margin: 0 auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        h2 { margin-top: 0; }
+        .search-box { width: 100%; padding: 12px 16px; font-size: 16px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; margin-bottom: 20px; }
+        .count { font-size: 14px; color: #666; margin-bottom: 15px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #eee; }
+        th { background-color: #f1f3f5; font-weight: 600; }
+        tr:hover { background-color: #f8f9fa; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>📦 Products Inventory</h2>
+        <form method="GET" action="/">
+            <input type="text" name="q" class="search-box" placeholder="🔍 Search by Item Code or Description..." value="{{ query }}" oninput="this.form.submit()">
+        </form>
+        <div class="count">Showing <strong>{{ total_showing }}</strong> of <strong>{{ total_all }}</strong> items</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Item Code</th>
+                    <th>Description</th>
+                    <th>Category</th>
+                    <th>Qty</th>
+                    <th>Limit Qty</th>
+                    <th>Location</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in items %}
+                <tr>
+                    <td><strong>{{ row.id }}</strong></td>
+                    <td>{{ row.name }}</td>
+                    <td>{{ row.category }}</td>
+                    <td>{{ row.qty }}</td>
+                    <td>{{ row.limit_qty }}</td>
+                    <td>{{ row.location }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" style="text-align:center; padding: 20px; color: #888;">No items found matching your search.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>
+"""
 
-@st.cache_data(ttl=60)  # Caches data for 60 seconds
-def load_data():
-    return pd.read_csv(CSV_URL)
+@app.route("/")
+def index():
+    query = request.args.get("q", "").strip()
+    try:
+        df = pd.read_csv(CSV_URL).fillna("")
+        
+        if query:
+            q_lower = query.lower()
+            mask = (
+                df['id'].astype(str).str.lower().str.contains(q_lower, na=False) |
+                df['name'].astype(str).str.lower().str.contains(q_lower, na=False)
+            )
+            filtered_df = df[mask]
+        else:
+            filtered_df = df
 
-try:
-    df = load_data()
-
-    # Search Bar for Code (id) or Description (name)
-    search_query = st.text_input(
-        "🔍 Search by Item Code or Description:",
-        placeholder="Type code (e.g. CE34) or description (e.g. CPVC ELBOW)..."
-    )
-
-    # Filter Logic
-    if search_query:
-        # Convert search query to string and lowercase
-        query = search_query.strip().lower()
-
-        # Check if query matches 'id' or 'name' columns
-        mask = (
-            df['id'].astype(str).str.lower().str.contains(query, na=False) |
-            df['name'].astype(str).str.lower().str.contains(query, na=False)
+        items = filtered_df.to_dict(orient="records")
+        return render_template_string(
+            HTML_TEMPLATE,
+            items=items,
+            query=query,
+            total_showing=len(filtered_df),
+            total_all=len(df)
         )
-        filtered_df = df[mask]
-    else:
-        filtered_df = df
+    except Exception as e:
+        return f"<h3>Error loading products data from Google Sheet.</h3><p>{e}</p>", 500
 
-    # Display total items count
-    st.caption(f"Showing **{len(filtered_df)}** of **{len(df)}** total items")
-
-    # Display Interactive Data Table
-    st.dataframe(
-        filtered_df,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "id": st.column_config.TextColumn("Item Code"),
-            "name": st.column_config.TextColumn("Description"),
-            "category": st.column_config.TextColumn("Category"),
-            "qty": st.column_config.NumberColumn("Quantity"),
-            "limit_qty": st.column_config.NumberColumn("Limit Qty"),
-            "location": st.column_config.TextColumn("Location"),
-        }
-    )
-
-except Exception as e:
-    st.error(f"Error loading products data. Ensure the Google Sheet tab named '{TAB_NAME}' is published to the web.")
+if __name__ == "__main__":
+    app.run(debug=True)
