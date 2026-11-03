@@ -11,7 +11,6 @@ PASSWORD_HASH = generate_password_hash("NS786110")
 
 SHEET_ID = "1YYsTX_pXMlBSv4JeWUQHBHX78iSeaKGyf91nzlBLX1A"
 PRODUCTS_CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=products"
-# Target the sync_meta tab specifically
 META_CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=sync_meta"
 
 LOGIN_HTML = """
@@ -37,8 +36,9 @@ LOGIN_HTML = """
     <div class="login-card">
         <h2>🔒 Enter Access Password</h2>
         {% if error %}<div class="error">{{ error }}</div>{% endif %}
+        <!-- Form allows submitting via Enter key as well as button click -->
         <form method="POST" action="/login">
-            <input type="password" name="password" placeholder="Password" required autofocus autocomplete="off">
+            <input type="password" name="password" placeholder="Password" required autofocus autocomplete="current-password">
             <button type="submit">Access Inventory</button>
         </form>
     </div>
@@ -113,7 +113,7 @@ MAIN_HTML = """
             font-size: 15px;
         }
 
-        /* Fixed Mobile Layout Cards */
+        /* Mobile Responsive Card View */
         @media (max-width: 768px) {
             body { padding: 10px; }
             .container { padding: 15px; }
@@ -265,12 +265,15 @@ def index():
         categories = sorted([c for c in df['category'].unique() if c])
         items = df.to_dict(orient="records")
 
+        # Correct Timestamp Extraction
         last_updated = "N/A"
         try:
-            meta_df = pd.read_csv(META_CSV_URL).fillna("")
-            if not meta_df.empty:
-                # Extracts timestamp value from the first row of sync_meta
-                last_updated = meta_df.columns[0] if "last_updated" in str(meta_df.columns[0]) else meta_df.iloc[0, 0]
+            meta_df = pd.read_csv(META_CSV_URL, header=None)
+            # Row 0 is 'last_updated', Row 1 is the actual date/time string
+            if len(meta_df) > 1:
+                last_updated = str(meta_df.iloc[1, 0]).strip()
+            elif len(meta_df) == 1:
+                last_updated = str(meta_df.iloc[0, 0]).strip()
         except Exception:
             pass
 
