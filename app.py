@@ -36,7 +36,6 @@ LOGIN_HTML = """
     <div class="login-card">
         <h2>🔒 Enter Access Password</h2>
         {% if error %}<div class="error">{{ error }}</div>{% endif %}
-        <!-- Form allows submitting via Enter key as well as button click -->
         <form method="POST" action="/login">
             <input type="password" name="password" placeholder="Password" required autofocus autocomplete="current-password">
             <button type="submit">Access Inventory</button>
@@ -262,14 +261,18 @@ def index():
         
     try:
         df = pd.read_csv(PRODUCTS_CSV_URL).fillna("")
+        
+        # Clean 'qty' column to remove .0 decimals
+        if 'qty' in df.columns:
+            df['qty'] = pd.to_numeric(df['qty'], errors='coerce').fillna(0).astype(int)
+
         categories = sorted([c for c in df['category'].unique() if c])
         items = df.to_dict(orient="records")
 
-        # Correct Timestamp Extraction
+        # Extract Timestamp
         last_updated = "N/A"
         try:
             meta_df = pd.read_csv(META_CSV_URL, header=None)
-            # Row 0 is 'last_updated', Row 1 is the actual date/time string
             if len(meta_df) > 1:
                 last_updated = str(meta_df.iloc[1, 0]).strip()
             elif len(meta_df) == 1:
