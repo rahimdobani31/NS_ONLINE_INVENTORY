@@ -1,12 +1,51 @@
-from flask import Flask, render_template_string
+from flask import Flask, render_template_string, request, session, redirect, url_for
 import pandas as pd
+from werkzeug.security import generate_password_hash, check_password_hash
+import secrets
 
 app = Flask(__name__)
+app.secret_key = secrets.token_hex(24)  # Secure session encryption
+
+# Hashed password (NS786110) — hidden from client-side source code
+PASSWORD_HASH = generate_password_hash("NS786110")
 
 SHEET_ID = "1YYsTX_pXMlBSv4JeWUQHBHX78iSeaKGyf91nzlBLX1A"
-CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=products"
+PRODUCTS_CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=products"
+META_CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=sync_meta"
 
-HTML_TEMPLATE = """
+LOGIN_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NS Inventory - Login</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f6f8; margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .login-card { background: #fff; padding: 30px 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); width: 100%; max-width: 360px; text-align: center; }
+        h2 { margin-top: 0; margin-bottom: 20px; font-size: 20px; color: #333; }
+        input[type="password"] { width: 100%; padding: 12px; font-size: 16px; border: 1px solid #dcdfe6; border-radius: 8px; margin-bottom: 15px; outline: none; text-align: center; }
+        input[type="password"]:focus { border-color: #0066cc; }
+        button { width: 100%; padding: 12px; background: #0066cc; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; }
+        button:hover { background: #0052a3; }
+        .error { color: #d9534f; font-size: 14px; margin-bottom: 15px; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <h2>🔒 Enter Access Password</h2>
+        {% if error %}<div class="error">{{ error }}</div>{% endif %}
+        <form method="POST" action="/login">
+            <input type="password" name="password" placeholder="Password" required autofocus autocomplete="off">
+            <button type="submit">Access Inventory</button>
+        </form>
+    </div>
+</body>
+</html>
+"""
+
+MAIN_HTML = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -23,19 +62,23 @@ HTML_TEMPLATE = """
             color: #333; 
         }
         .container { 
-            max-width: 1150px; 
+            max-width: 1100px; 
             margin: 0 auto; 
             background: #ffffff; 
             padding: 20px; 
             border-radius: 12px; 
             box-shadow: 0 4px 12px rgba(0,0,0,0.06); 
         }
-        h2 { margin-top: 0; margin-bottom: 18px; font-size: 22px; display: flex; align-items: center; gap: 8px; }
+        .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; flex-wrap: wrap; gap: 10px; }
+        h2 { margin: 0; font-size: 22px; display: flex; align-items: center; gap: 8px; }
+        .logout-btn { color: #d9534f; text-decoration: none; font-size: 14px; font-weight: 600; }
         
-        /* Filter Grid Layout */
+        .meta-info { font-size: 12px; color: #888; margin-bottom: 18px; }
+        
+        /* Filter Grid */
         .filter-grid {
             display: grid;
-            grid-template-columns: 2fr 1fr 1fr;
+            grid-template-columns: 2fr 1fr;
             gap: 12px;
             margin-bottom: 18px;
         }
@@ -47,11 +90,8 @@ HTML_TEMPLATE = """
             border-radius: 8px;
             background-color: #fff;
             outline: none;
-            transition: border-color 0.2s;
         }
-        .search-box:focus, .select-box:focus {
-            border-color: #0066cc;
-        }
+        .search-box:focus, .select-box:focus { border-color: #0066cc; }
         
         .count { font-size: 13px; color: #666; margin-bottom: 15px; font-weight: 500; }
         
@@ -61,7 +101,7 @@ HTML_TEMPLATE = """
         th, td { text-align: left; padding: 12px; border-bottom: 1px solid #edf2f7; }
         th { background-color: #f7fafc; font-weight: 600; font-size: 14px; color: #4a5568; }
         
-        /* Responsive Mobile Layout (Cards) */
+        /* Fixed Mobile Layout Cards */
         @media (max-width: 768px) {
             body { padding: 10px; }
             .container { padding: 15px; }
@@ -74,33 +114,48 @@ HTML_TEMPLATE = """
                 background: #ffffff;
                 border: 1px solid #e2e8f0;
                 border-radius: 10px;
-                padding: 12px;
+                padding: 14px;
                 margin-bottom: 12px;
                 box-shadow: 0 2px 4px rgba(0,0,0,0.02);
             }
+            
             td {
                 display: flex;
+                flex-direction: row;
                 justify-content: space-between;
-                align-items: center;
+                align-items: flex-start;
                 padding: 6px 0;
                 border-bottom: 1px solid #f7fafc;
                 font-size: 14px;
             }
             td:last-child { border-bottom: none; }
             
-            /* Add field labels on mobile view */
+            /* Responsive Description Fix */
+            td[data-label="Description"] {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 4px;
+            }
+            
             td::before {
                 content: attr(data-label);
                 font-weight: 600;
                 color: #718096;
                 font-size: 13px;
+                min-width: 90px;
             }
+            
+            .desc-text { text-align: left; word-break: break-word; }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h2>📦 Products Inventory</h2>
+        <div class="header-row">
+            <h2>📦 Products Inventory</h2>
+            <a href="/logout" class="logout-btn">Logout</a>
+        </div>
+        <div class="meta-info">🕒 Last Google Sheet Update: <strong>{{ last_updated }}</strong></div>
         
         <div class="filter-grid">
             <input type="text" id="searchInput" class="search-box" placeholder="🔍 Search Code or Description..." oninput="filterTable()">
@@ -109,13 +164,6 @@ HTML_TEMPLATE = """
                 <option value="">All Categories</option>
                 {% for cat in categories %}
                 <option value="{{ cat }}">{{ cat }}</option>
-                {% endfor %}
-            </select>
-            
-            <select id="locationFilter" class="select-box" onchange="filterTable()">
-                <option value="">All Locations</option>
-                {% for loc in locations %}
-                <option value="{{ loc }}">{{ loc }}</option>
                 {% endfor %}
             </select>
         </div>
@@ -130,8 +178,6 @@ HTML_TEMPLATE = """
                         <th>Description</th>
                         <th>Category</th>
                         <th>Qty</th>
-                        <th>Limit Qty</th>
-                        <th>Location</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -139,14 +185,11 @@ HTML_TEMPLATE = """
                     <tr class="item-row" 
                         data-code="{{ row.id|lower }}" 
                         data-name="{{ row.name|lower }}" 
-                        data-category="{{ row.category }}" 
-                        data-location="{{ row.location }}">
+                        data-category="{{ row.category }}">
                         <td data-label="Item Code"><strong>{{ row.id }}</strong></td>
-                        <td data-label="Description">{{ row.name }}</td>
+                        <td data-label="Description"><span class="desc-text">{{ row.name }}</span></td>
                         <td data-label="Category">{{ row.category }}</td>
                         <td data-label="Qty">{{ row.qty }}</td>
-                        <td data-label="Limit Qty">{{ row.limit_qty }}</td>
-                        <td data-label="Location">{{ row.location }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -154,12 +197,10 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
-    <!-- Client-Side Instant Filter Script -->
     <script>
         function filterTable() {
             const query = document.getElementById('searchInput').value.toLowerCase().trim();
             const selectedCategory = document.getElementById('categoryFilter').value;
-            const selectedLocation = document.getElementById('locationFilter').value;
             
             const rows = document.querySelectorAll('.item-row');
             let visibleCount = 0;
@@ -168,13 +209,11 @@ HTML_TEMPLATE = """
                 const code = row.getAttribute('data-code');
                 const name = row.getAttribute('data-name');
                 const category = row.getAttribute('data-category');
-                const location = row.getAttribute('data-location');
 
                 const matchesQuery = !query || code.includes(query) || name.includes(query);
                 const matchesCategory = !selectedCategory || category === selectedCategory;
-                const matchesLocation = !selectedLocation || location === selectedLocation;
 
-                if (matchesQuery && matchesCategory && matchesLocation) {
+                if (matchesQuery && matchesCategory) {
                     row.style.display = '';
                     visibleCount++;
                 } else {
@@ -189,21 +228,44 @@ HTML_TEMPLATE = """
 </html>
 """
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        pwd = request.form.get("password", "")
+        if check_password_hash(PASSWORD_HASH, pwd):
+            session["authenticated"] = True
+            return redirect(url_for("index"))
+        return render_template_string(LOGIN_HTML, error="Invalid Password. Try again.")
+    return render_template_string(LOGIN_HTML)
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
 @app.route("/", methods=["GET"])
 def index():
+    if not session.get("authenticated"):
+        return redirect(url_for("login"))
+        
     try:
-        df = pd.read_csv(CSV_URL).fillna("")
-        
+        df = pd.read_csv(PRODUCTS_CSV_URL).fillna("")
         categories = sorted([c for c in df['category'].unique() if c])
-        locations = sorted([l for l in df['location'].unique() if l])
-        
         items = df.to_dict(orient="records")
-        
+
+        last_updated = "N/A"
+        try:
+            meta_df = pd.read_csv(META_CSV_URL)
+            if not meta_df.empty:
+                last_updated = meta_df.iloc[0, 0]
+        except Exception:
+            pass
+
         return render_template_string(
-            HTML_TEMPLATE,
+            MAIN_HTML,
             items=items,
             categories=categories,
-            locations=locations
+            last_updated=last_updated
         )
     except Exception as e:
         return f"<h3>Error loading products data from Google Sheet.</h3><p>{e}</p>", 500
