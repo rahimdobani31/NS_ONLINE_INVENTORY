@@ -4,8 +4,8 @@ import pandas as pd
 app = Flask(__name__)
 
 SHEET_ID = "1YYsTX_pXMlBSv4JeWUQHBHX78iSeaKGyf91nzlBLX1A"
-# Direct public export CSV link
-CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0"
+# Standard Google Visualization CSV URL specifying the exact tab name
+CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=products"
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -68,6 +68,7 @@ HTML_TEMPLATE = """
 def index():
     query = request.args.get("q", "").strip()
     try:
+        # Load CSV data from Google Sheets
         df = pd.read_csv(CSV_URL).fillna("")
         
         if query:
