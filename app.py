@@ -4,13 +4,14 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import secrets
 
 app = Flask(__name__)
-app.secret_key = secrets.token_hex(24)  # Secure session encryption
+app.secret_key = secrets.token_hex(24)
 
-# Hashed password (NS786110) — hidden from client-side source code
+# Encrypted password hash for NS786110
 PASSWORD_HASH = generate_password_hash("NS786110")
 
 SHEET_ID = "1YYsTX_pXMlBSv4JeWUQHBHX78iSeaKGyf91nzlBLX1A"
 PRODUCTS_CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=products"
+# Target the sync_meta tab specifically
 META_CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=sync_meta"
 
 LOGIN_HTML = """
@@ -73,7 +74,7 @@ MAIN_HTML = """
         h2 { margin: 0; font-size: 22px; display: flex; align-items: center; gap: 8px; }
         .logout-btn { color: #d9534f; text-decoration: none; font-size: 14px; font-weight: 600; }
         
-        .meta-info { font-size: 12px; color: #888; margin-bottom: 18px; }
+        .meta-info { font-size: 13px; color: #555; margin-bottom: 18px; }
         
         /* Filter Grid */
         .filter-grid {
@@ -101,6 +102,17 @@ MAIN_HTML = """
         th, td { text-align: left; padding: 12px; border-bottom: 1px solid #edf2f7; }
         th { background-color: #f7fafc; font-weight: 600; font-size: 14px; color: #4a5568; }
         
+        /* Highlighted Quantity Styling */
+        .qty-badge {
+            font-weight: 700;
+            color: #0066cc;
+            background-color: #eef6ff;
+            padding: 4px 10px;
+            border-radius: 6px;
+            display: inline-block;
+            font-size: 15px;
+        }
+
         /* Fixed Mobile Layout Cards */
         @media (max-width: 768px) {
             body { padding: 10px; }
@@ -123,14 +135,13 @@ MAIN_HTML = """
                 display: flex;
                 flex-direction: row;
                 justify-content: space-between;
-                align-items: flex-start;
-                padding: 6px 0;
+                align-items: center;
+                padding: 8px 0;
                 border-bottom: 1px solid #f7fafc;
                 font-size: 14px;
             }
             td:last-child { border-bottom: none; }
             
-            /* Responsive Description Fix */
             td[data-label="Description"] {
                 flex-direction: column;
                 align-items: flex-start;
@@ -146,6 +157,7 @@ MAIN_HTML = """
             }
             
             .desc-text { text-align: left; word-break: break-word; }
+            .qty-badge { font-size: 16px; padding: 5px 12px; }
         }
     </style>
 </head>
@@ -189,7 +201,7 @@ MAIN_HTML = """
                         <td data-label="Item Code"><strong>{{ row.id }}</strong></td>
                         <td data-label="Description"><span class="desc-text">{{ row.name }}</span></td>
                         <td data-label="Category">{{ row.category }}</td>
-                        <td data-label="Qty">{{ row.qty }}</td>
+                        <td data-label="Qty"><span class="qty-badge">{{ row.qty }}</span></td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -255,9 +267,10 @@ def index():
 
         last_updated = "N/A"
         try:
-            meta_df = pd.read_csv(META_CSV_URL)
+            meta_df = pd.read_csv(META_CSV_URL).fillna("")
             if not meta_df.empty:
-                last_updated = meta_df.iloc[0, 0]
+                # Extracts timestamp value from the first row of sync_meta
+                last_updated = meta_df.columns[0] if "last_updated" in str(meta_df.columns[0]) else meta_df.iloc[0, 0]
         except Exception:
             pass
 
