@@ -4,8 +4,8 @@ import pandas as pd
 app = Flask(__name__)
 
 SHEET_ID = "1YYsTX_pXMlBSv4JeWUQHBHX78iSeaKGyf91nzlBLX1A"
-TAB_NAME = "products"
-CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={TAB_NAME}"
+# Direct public export CSV link
+CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0"
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
